@@ -1,104 +1,52 @@
-let latestResults = [];
-
-// Fungsi inisialisasi saat popup dibuka
-chrome.storage.local.get(["jutawanResults", "adminUrl", "token", "executorName"], (res) => {
-    if (res.jutawanResults) renderTable(res.jutawanResults);
-    if (res.adminUrl) document.getElementById("adminUrl").value = res.adminUrl;
-    if (res.token) document.getElementById("token").value = res.token;
-    if (res.executorName) document.getElementById("executorName").value = res.executorName;
-});
-
-document.getElementById("startBtn").addEventListener("click", async () => {
-    const adminUrl = document.getElementById("adminUrl").value.trim();
-    const txDataRaw = document.getElementById("txData").value.trim();
-    const startDate = document.getElementById("startDateInput").value;
-    const endDate = document.getElementById("endDateInput").value;
-    const status = document.getElementById("status");
-
-    if (!txDataRaw || !adminUrl || !startDate || !endDate) {
-        status.textContent = "⚠️ Lengkapi URL, Tanggal, dan Data Transaksi!";
-        return;
-    }
-
-    const lines = txDataRaw.split('\n').filter(line => line.trim());
-    const txQueue = lines.map(line => {
-        const parts = line.split(/\s+/);
-        return { 
-            userId: parts[0], 
-            transactionId: parts[1], 
-            urlAdmin: adminUrl, 
-            startDate, 
-            endDate 
-        };
-    });
-
-    await chrome.storage.local.set({ txQueue, jutawanResults: [] });
-    chrome.runtime.sendMessage({ action: "startBatchProcess" });
-});
-
-function renderTable(data) {
-    const tbody = document.getElementById("resultBody");
-    tbody.innerHTML = "";
-    latestResults = data || [];
-
-    if (latestResults.length === 0) {
-        tbody.innerHTML = "<tr><td colspan='4'>Belum ada data</td></tr>";
-        return;
-    }
-
-    latestResults.forEach(item => {
-        const win = parseFloat(item.debetValue.replace(/,/g, '')) || 0;
-        const bet = parseFloat(item.betValue.replace(/,/g, '')) || 0;
-        
-        let statusLabel = "";
-        let bgColor = "";
-
-        // Logika Pengecekan Berdasarkan Angka
-        if (win > 0 && bet > 0) {
-            statusLabel = `✅ SESUAI (JP ${Math.floor(win/bet)}x)`;
-            bgColor = "rgba(40, 167, 69, 0.25)"; 
-        } else if (win > 0 && bet === 0) {
-            statusLabel = "⚠️ WIN TANPA BET";
-            bgColor = "rgba(255, 193, 7, 0.25)";
-        } else {
-            statusLabel = "❌ TIDAK SESUAI";
-            bgColor = "rgba(220, 53, 69, 0.25)";
-        }
-
-        const row = document.createElement("tr");
-        row.style.backgroundColor = bgColor;
-        row.innerHTML = `
-            <td>${item.userId}</td>
-            <td>${item.transactionId}</td>
-            <td>${item.betValue}</td>
-            <td style="font-weight: bold;">${statusLabel}</td>
-        `;
-        tbody.appendChild(row);
-    });
-}
-
-// Listener pesan dari background
-chrome.runtime.onMessage.addListener(msg => {
-    if (msg.action === "updateStatus") document.getElementById("status").textContent = msg.status;
-});
-
-// Listener perubahan storage untuk update tabel otomatis
-chrome.storage.onChanged.addListener(changes => {
-    if (changes.jutawanResults) renderTable(changes.jutawanResults.newValue);
-});
-
-// Fungsi Salin
-document.getElementById("copyBtn").addEventListener("click", () => {
-    if (latestResults.length === 0) return;
-    const tsv = latestResults.map(i => `${i.userId}\t${i.transactionId}\t${i.betValue}\t${i.debetValue}`).join('\n');
-    navigator.clipboard.writeText(tsv);
-    document.getElementById("status").textContent = "📋 Data berhasil disalin!";
-});
-
-// Fungsi Hapus
-document.getElementById("clearBtn").addEventListener("click", () => {
-    chrome.storage.local.set({ jutawanResults: [], txQueue: [] }, () => {
-        renderTable([]);
-        document.getElementById("status").textContent = "🧹 Data dibersihkan.";
-    });
-});
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <title>Scatter Auto Checker</title>
+  <style>
+    body { font-family: sans-serif; padding: 15px; width: 420px; background: #3b0000; color: #fff5e1; }
+    .main-container { border: 2px solid #d4af37; padding: 15px; border-radius: 10px; background: rgba(0,0,0,0.5); }
+    h3 { text-align: center; color: #ffd700; }
+    input, textarea { width: 100%; padding: 8px; margin: 5px 0; background: #222; border: 1px solid #d4af37; color: #fff; border-radius: 5px; box-sizing: border-box; }
+    button { width: 100%; padding: 10px; background: linear-gradient(90deg, #b30000, #ff3b3b); color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; margin-top: 10px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 12px; }
+    th, td { border: 1px solid #555; padding: 5px; text-align: center; }
+    th { background: #800; }
+    #status { font-style: italic; text-align: center; margin: 10px 0; color: #ffdf8c; }
+    .btn-group { display: flex; gap: 5px; }
+    #copyBtn { background: #cfa300; color: #000; }
+    #clearBtn { background: #666; }
+  </style>
+</head>
+<body>
+  <div class="main-container">
+    <h3>🐉 Scatter Checker 🧧</h3>
+    <input type="text" id="adminUrl" placeholder="URL Admin (Contoh: https://admin.com/history)">
+    <div style="display: flex; gap: 5px;">
+      <input type="date" id="startDateInput">
+      <input type="date" id="endDateInput">
+    </div>
+    <textarea id="txData" placeholder="UserID [Spasi] TxID (Per baris)"></textarea>
+    <button id="startBtn">🔮 MULAI PROSES BATCH</button>
+    <p id="status">Siap.</p>
+    <table>
+      <thead>
+        <tr>
+          <th>User</th>
+          <th>TxID</th>
+          <th>Bet</th>
+          <th>Status/Scatter</th>
+        </tr>
+      </thead>
+      <tbody id="resultBody">
+        <tr><td colspan="4">Belum ada data</td></tr>
+      </tbody>
+    </table>
+    <div class="btn-group">
+      <button id="copyBtn">📜 SALIN</button>
+      <button id="clearBtn">🧹 HAPUS</button>
+    </div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
