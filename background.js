@@ -1,5 +1,3 @@
-// background.js
-
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === "startBatchProcess") {
         processQueue();
@@ -12,7 +10,7 @@ async function processQueue() {
     let { txQueue, jutawanResults = [] } = await chrome.storage.local.get(['txQueue', 'jutawanResults']);
 
     if (!txQueue || txQueue.length === 0) {
-        chrome.runtime.sendMessage({ action: "updateStatus", status: "🏁 Antrian Selesai." });
+        chrome.runtime.sendMessage({ action: "updateStatus", status: "🏁 Semua data selesai diproses." });
         return;
     }
 
@@ -20,7 +18,7 @@ async function processQueue() {
     chrome.runtime.sendMessage({ action: "updateStatus", status: `🔍 Mengecek: ${task.userId}...` });
 
     try {
-        // Setup URL pencarian sesuai form HTML admin
+        // Simulasi pencarian berdasarkan userId dan rentang tanggal di admin
         const searchParams = new URLSearchParams({
             userId: task.userId,
             startDate: task.startDate,
@@ -46,6 +44,7 @@ async function processQueue() {
         rows.forEach(row => {
             const rowTxId = row.querySelector('[data-changekey="keteranganId"]')?.innerText.trim();
             if (rowTxId === task.transactionId) {
+                // Sesuai HTML: debet = Kemenangan, kredit = Taruhan/Bet
                 foundData.betValue = row.querySelector('[data-changekey="kredit"]')?.innerText.trim() || "0";
                 foundData.debetValue = row.querySelector('[data-changekey="debet"]')?.innerText.trim() || "0";
                 foundData.scatterTitle = row.querySelector('[data-changekey="keterangan"]')?.innerText.trim() || "Selesai";
@@ -55,11 +54,11 @@ async function processQueue() {
         jutawanResults.push(foundData);
         await chrome.storage.local.set({ txQueue, jutawanResults });
         
-        // Jeda 1 detik agar tidak spam server
-        setTimeout(processQueue, 1000);
+        // Jeda 800ms agar server admin tidak overload
+        setTimeout(processQueue, 800);
 
     } catch (error) {
-        console.error("Error:", error);
+        console.error("Fetch error:", error);
         setTimeout(processQueue, 2000);
     }
 }
