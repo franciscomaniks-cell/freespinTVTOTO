@@ -1,64 +1,37 @@
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === "startBatchProcess") {
-        processQueue();
-        sendResponse({ status: "batchStarted" });
-    }
-    return true;
+// background.js
+chrome.runtime.onMessage.addListener((request) => {
+  if (request.action === "startBatchProcess") processQueue();
 });
 
 async function processQueue() {
-    let { txQueue, jutawanResults = [] } = await chrome.storage.local.get(['txQueue', 'jutawanResults']);
+  let { txQueue, jutawanResults = [] } = await chrome.storage.local.get(['txQueue', 'jutawanResults']);
+  if (!txQueue || txQueue.length === 0) return;
 
-    if (!txQueue || txQueue.length === 0) {
-        chrome.runtime.sendMessage({ action: "updateStatus", status: "🏁 Semua data selesai diproses." });
-        return;
-    }
+  const task = txQueue.shift();
+  chrome.runtime.sendMessage({ action: "updateStatus", status: `Mengecek ${task.userId}...` });
 
-    const task = txQueue.shift();
-    chrome.runtime.sendMessage({ action: "updateStatus", status: `🔍 Mengecek: ${task.userId}...` });
+  try {
+    const resp = await fetch(`${task.adminUrl}?userId=${task.userId}&transactionId=${task.transactionId}&startDate=${task.startDate}&endDate=${task.endDate}`);
+    const html = await resp.text();
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    
+    // Mencari baris yang ID transaksinya cocok
+    const rows = doc.querySelectorAll('.transaction-record-table tbody tr');
+    let found = { userId: task.userId, transactionId: task.transactionId, betValue: "0", debetValue: "0" };
 
-    try {
-        // Simulasi pencarian berdasarkan userId dan rentang tanggal di admin
-        const searchParams = new URLSearchParams({
-            userId: task.userId,
-            startDate: task.startDate,
-            endDate: task.endDate,
-            transactionId: task.transactionId
-        });
+    rows.forEach(row => {
+      const idDiTabel = row.querySelector('[data-changekey="keteranganId"]')?.innerText.trim();
+      if (idDiTabel === task.transactionId) {
+        found.betValue = row.querySelector('[data-changekey="kredit"]')?.innerText.trim() || "0";
+        found.debetValue = row.querySelector('[data-changekey="debet"]')?.innerText.trim() || "0";
+      }
+    });
 
-        const response = await fetch(`${task.urlAdmin}?${searchParams.toString()}`);
-        const htmlText = await response.text();
-        
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(htmlText, 'text/html');
-        const rows = doc.querySelectorAll('.transaction-record-table tbody tr');
-        
-        let foundData = {
-            userId: task.userId,
-            transactionId: task.transactionId,
-            betValue: "0",
-            debetValue: "0",
-            scatterTitle: "Data Tidak Ditemukan"
-        };
-
-        rows.forEach(row => {
-            const rowTxId = row.querySelector('[data-changekey="keteranganId"]')?.innerText.trim();
-            if (rowTxId === task.transactionId) {
-                // Sesuai HTML: debet = Kemenangan, kredit = Taruhan/Bet
-                foundData.betValue = row.querySelector('[data-changekey="kredit"]')?.innerText.trim() || "0";
-                foundData.debetValue = row.querySelector('[data-changekey="debet"]')?.innerText.trim() || "0";
-                foundData.scatterTitle = row.querySelector('[data-changekey="keterangan"]')?.innerText.trim() || "Selesai";
-            }
-        });
-
-        jutawanResults.push(foundData);
-        await chrome.storage.local.set({ txQueue, jutawanResults });
-        
-        // Jeda 800ms agar server admin tidak overload
-        setTimeout(processQueue, 800);
-
-    } catch (error) {
-        console.error("Fetch error:", error);
-        setTimeout(processQueue, 2000);
-    }
+    jutawanResults.push(found);
+    await chrome.storage.local.set({ txQueue, jutawanResults });
+    setTimeout(processQueue, 1000); // Jeda 1 detik
+  } catch (e) {
+    setTimeout(processQueue, 2000);
+  }
 }
