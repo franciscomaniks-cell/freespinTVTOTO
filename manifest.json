@@ -1,11 +1,12 @@
 {
   "manifest_version": 3,
-  "name": "Scatter Auto Checker Pro",
-  "version": "1.0",
+  "name": "Scatter Checker Pro TVTOTO",
+  "version": "1.1",
+  "description": "Auto Check Debet vs Kredit dari Tabel Admin",
   "permissions": ["storage", "activeTab"],
   "host_permissions": ["<all_urls>"],
   "action": {
-    "default_popup": "popup.html"
+    "default_popup": "index.html"
   },
   "background": {
     "service_worker": "background.js"
